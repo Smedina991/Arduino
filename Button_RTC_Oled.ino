@@ -1,31 +1,19 @@
-// SCL to 3 on pro micro, A5 on uno
-// SDA to 2 on pro micro, A4 on uno
-// VCC to 5V
-// GND to GND
-#include <Wire.h>
-#include <SPI.h>
-#include <SD.h>
-
 // For OLED module
 #include <Adafruit_SSD1306.h>
-//#include <Adafruit_GFX.h>
-//#include <splash.h>                  //why
-//#include <Adafruit_GrayOLED.h>       //why
-//#include <Adafruit_SPITFT.h>         //why
-//#include <Adafruit_SPITFT_Macros.h>  //why
-//#include <gfxfont.h>                 //why
+#include <Adafruit_GFX.h>
+#include <Wire.h>
 #define SCREEN_WIDTH 128  // OLED display width, in pixels
 #define SCREEN_HEIGHT 32  // OLED display height, in pixels. 32 for full size, 16 if you use the smaller display
 // Declaration for an SSD1306 display connected to I2C (SDA, SCL pins)
 Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, -1);
 
 // For RTC Module
+#include <SPI.h>
 #include <RTClib.h>
 //#include <DS3231.h>
 //#define DS3231_I2C_ADDRESS 0x68
 RTC_DS3231 myclock;
 DateTime now;
-
 
 // ---------- MAIN USER DEFINES SETTINGS FOR INPUTS -----------
 #define numinputs 4                    // Set the pins for inputs from buttons (CURRENTLY EXTERNAL PULLUPS)
@@ -36,13 +24,9 @@ word longpresstime = 600;              // Time for long presses, so it goes into
 word timeout = 300;                    // Time for stopping the current multipress check
 byte isjoystick = 0;                   // 0 is for buttons, 1 is for yes this is a joystick. Joysticks will need additional settings to set correct idle state and low and high trigger values.
 word oleddelay = 100;                  // delays the updating of OLED so it's not flashing new data and spending cycles constantly
-word rtcdelay = 3000;                  // delays the checking of RTC module so it's not always polling
 word oledflashdelay = 300;
-// ------------------------------------------------------------
+word rtcdelay = 3000;  // delays the checking of RTC module so it's not always polling
 
-//Joystick Settings
-int joysticklow[] = { 80, 80 };     // Threshold for low joystick. This differs for each joystick so call each from an array.
-int joystickhigh[] = { 260, 260 };  // Threshold for high joystick. This differs for each joystick so call each from an array.
 // ------------------------------------------------------------
 
 // Current states of the inputs. Use this value when using digitalRead
@@ -57,7 +41,7 @@ unsigned long timeover;               // Time when the program will stop checkin
 // ------------------------There is only one multipress timer for all inputs, so you can use a combination of inputs without losing the multipress values of other buttons.
 
 // Oled settings
-boolean oledon = 0;
+boolean oledon = 1;
 unsigned long olednow = 0;  // timer to allow delay between checking and updating oled
 unsigned long oledflash = 0;
 
@@ -74,6 +58,7 @@ word yearvalue = 2024;
 unsigned long rtcnow = 0;  // timer to allow delay between checking and updating rtc
 
 byte timersset = 0;  // how many timers are set. Will change as the user adds timer triggers.
+
 // --------------------------------------------------
 
 // Menu values
@@ -83,7 +68,6 @@ byte menuonesubnumber = 0;   // which sub number you are on for menu one
 
 byte menu_mainmenu = 0;
 byte menu_setclock = 1;
-byte menu_displaysleep = 2;
 
 // --------------------------------------------------
 
@@ -91,9 +75,40 @@ void setup() {
 
   Serial.begin(9600);
 
+  // OLED Startups
+  display.begin(SSD1306_SWITCHCAPVCC, 0x3C);
+  if (oledon == 1) {
+    delay(2000);
+
+    if (!display.begin(SSD1306_SWITCHCAPVCC, 0x3C)) {
+      Serial.println(F("SSD1306 allocation failed"));
+      oledon = 0;
+    } else {
+      Serial.println("Display *Should* be good.");
+      display.clearDisplay();  // clear display
+
+      display.setTextSize(1);           // text size
+      display.setTextColor(WHITE);      // text color
+      display.setCursor(0, 10);         // position to display
+      display.println("Hello There!");  // text to display
+      display.display();                // show on OLED
+    }
+  }
+
   //for RTC module
   Wire.begin();
   delay(1000);  // Wait so everything can actually begin
+  // for RTC Clock
+  if (clockon == 1) {
+    if (!myclock.begin()) {
+      clockon = 0;
+      //Serial.println("Clock did not start");
+    } else {
+      if (myclock.lostPower()) {
+        myclock.adjust(DateTime(F(__DATE__), F(__TIME__)));  // Auto set time based on system clock when you compile
+      }
+    }
+  }
 
   // for inputs
   for (byte i = 0; i < numinputs; i++) {
@@ -106,50 +121,16 @@ void setup() {
     timeover = 1;     // park the multipress timer as you aren't currently multipressing
     numpresses[i] = 0;
   }
-
-  // For OLED
-  if (oledon == 1) {
-    if (!display.begin(SSD1306_SWITCHCAPVCC, 0x3C)) {  // Address 0x3D for 128x64
-      Serial.println(F("SSD1306 allocation failed"));
-      oledon = 0;
-    } else {
-      delay(2000);  // Wait for the display initialize
-      display.clearDisplay();
-      display.setCursor(0, 0);
-      display.setTextSize(2);
-      display.print("Welcome!");
-      display.display();
-    }
-  }
-
-  // for oled
-  if (clockon == 1) {
-    if (!myclock.begin()) {
-      clockon = 0;
-      //Serial.println("Clock did not start");
-    } else {
-      if (myclock.lostPower()) {
-        myclock.adjust(DateTime(F(__DATE__), F(__TIME__)));  // Auto set time based on system clock when you compile
-      }
-    }
-  }
 }
 
 void loop() {
   checkInput();
-  gettime();
+  //gettime();
   // checktriggers();
   if (menunumber == menu_mainmenu) {
     mainmenu();
   } else if (menunumber == menu_setclock) {
     setclockmenu();
-  }
-}
-
-void settime() {
-  if (clockon == 1) {
-    myclock.adjust(DateTime(yearvalue, monthvalue, dayvalue, hourvalue, minutevalue, secondvalue));
-    Serial.println("Time Updated");
   }
 }
 
@@ -165,6 +146,12 @@ void gettime() {
   }
 }
 
+void settime() {
+  if (clockon == 1) {
+    myclock.adjust(DateTime(yearvalue, monthvalue, dayvalue, hourvalue, minutevalue, secondvalue));
+    Serial.println("Time Updated");
+  }
+}
 
 void checkInput() {
   boolean multion = 1;     // prepping to make this an arguement check. Can give the option to ignore multi presses.
@@ -241,21 +228,6 @@ void checkInput() {
   }
 }
 
-
-
-void inputaction() {  // take action for new inputs. Don't change values in here, that should be done when the action functon returns to the checker.
-  for (int i = 0; i < numinputs; i++) {
-    // if the state has not changed, act on long presses or timeouts.
-    // the program will wait until the multipress timeout has occurred to take action on single presses to ensure it is not going to be a multipress
-    // (it wouldn't have sent it here for action if it wasn't valid, but you need to find out which needs action)
-    if (instate[i] != inputidle && longover[i] != 1 && longover[i] < timenow) {  // LONG PRESS =  if the input is not idle, longover is not parked, and it has been this way for at least the longpress time
-      // Act on long press
-    } else if (instate[i] == inputidle && timeover != 1 && timeover < timenow) {  // SINGLE OR MULTI PRESS = if the input is idle, timeover is not parked, and the timeout time has been passed
-      // Act on single or multiple presses
-    }
-  }
-}
-
 void inputreset() {
   for (int k = 0; k < numinputs; k++) {
     longover[k] = 1;    // park the long compare timer as you have already reached the condition.
@@ -271,8 +243,6 @@ void mainmenu() {
     if (menuzerosubnumber == 1 && numpresses[3] > 0) {  // Set Clock Option - if next is pressed, go to the clock setting menu item.
       menunumber = menu_setclock;
       Serial.println("Going to clock setting menu. Start by setting hours.");
-    } else if (menuzerosubnumber == 3 && numpresses[3] > 0) {  // Display sleep option - if next is pressed, put the display to sleep
-      menunumber = menu_displaysleep;
     } else if (numpresses[1] > 0) {
       if (menuzerosubnumber < menuoptions - 1)
         menuzerosubnumber++;
@@ -295,8 +265,8 @@ void mainmenu() {
       Serial.print("Menu OOB, back to: 0");
     }
 
-    if (oledon == 1) {  // if you are allowing the display to display
-      if (menunumber == 0) {
+    if (oledon == 1) {        // if you are allowing the display to display
+      if (menunumber == 0) {  // make sure you didn't select another menu in the above button check. If you are still here, display
         if (menuzerosubnumber == 0) {
           display.clearDisplay();
           display.setCursor(0, 0);
