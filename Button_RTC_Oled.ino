@@ -239,10 +239,17 @@ void inputreset() {
 void mainmenu() {
   byte menuoptions = 3;  // the maximum number of menu items written here. Checked for out of bounds entries.
   timenow = millis();
-  if (olednow < timenow) {                              // if it's time to update the screen.
-    if (menuzerosubnumber == 1 && numpresses[3] > 0) {  // Set Clock Option - if next is pressed, go to the clock setting menu item.
-      menunumber = menu_setclock;
-      Serial.println("Going to clock setting menu. Start by setting hours.");
+  if (olednow < timenow) {    // if it's time to update the screen.
+    if (numpresses[3] > 0) {  // Set Clock Option - if next is pressed, go to the clock setting menu item.
+      if (menuzerosubnumber == 1) {
+        menunumber = menu_setclock;
+        Serial.println("Going to clock setting menu. Start by setting hours.");
+      } else if (menuzerosubnumber == menuoptions - 1) {
+        Serial.print("New timer ");
+        Serial.print(timersset + 1);
+        Serial.println(" added, set now.");
+        timersset++;
+      }
     } else if (numpresses[1] > 0) {
       if (menuzerosubnumber < menuoptions - 1)
         menuzerosubnumber++;
@@ -292,8 +299,7 @@ void mainmenu() {
           display.print("Menu:");
           display.setTextSize(2);
           display.setCursor(5, 10);
-          display.print("Timer ");
-          display.print(timersset + 1);
+          display.print("New Timer");
           display.display();
         } else if (menuzerosubnumber == 3) {
           display.clearDisplay();
