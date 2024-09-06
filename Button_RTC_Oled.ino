@@ -58,16 +58,22 @@ word yearvalue = 2024;
 unsigned long rtcnow = 0;  // timer to allow delay between checking and updating rtc
 
 byte timersset = 0;  // how many timers are set. Will change as the user adds timer triggers.
+byte currenttimer = 0;
+int timers[10];
 
 // --------------------------------------------------
 
 // Menu values
-byte menunumber = 0;         // which menu you are currently on.
-byte menuzerosubnumber = 0;  // which sub option you are on for menu zero
-byte menuonesubnumber = 0;   // which sub number you are on for menu one
+byte menuoptions = 4 + timersset;  // the maximum number of menu items written here. Checked for out of bounds entries.
+byte menunumber = 0;               // which menu you are currently on.
+byte menuzerosubnumber = 0;        // which sub option you are on for menu zero
+byte menuonesubnumber = 0;         // which sub number you are on for menu one
+byte menutwosubnumber = 0;
 
-byte menu_mainmenu = 0;
-byte menu_setclock = 1;
+#define menu_mainmenu 0
+#define menu_setclock 1
+#define menu_triggermenu 2
+boolean idlescreen = true;
 
 // --------------------------------------------------
 
@@ -87,11 +93,11 @@ void setup() {
       Serial.println("Display *Should* be good.");
       display.clearDisplay();  // clear display
 
-      display.setTextSize(1);           // text size
-      display.setTextColor(WHITE);      // text color
-      display.setCursor(0, 10);         // position to display
-      display.println("Hello There!");  // text to display
-      display.display();                // show on OLED
+      display.setTextSize(2);          // text size
+      display.setTextColor(WHITE);     // text color
+      display.setCursor(0, 10);        // position to display
+      display.println("Plant Life!");  // text to display
+      display.display();               // show on OLED
     }
   }
 
@@ -125,12 +131,23 @@ void setup() {
 
 void loop() {
   checkInput();
-  //gettime();
-  // checktriggers();
-  if (menunumber == menu_mainmenu) {
-    mainmenu();
-  } else if (menunumber == menu_setclock) {
-    setclockmenu();
+
+  if (idlescreen == true) {
+    if (numpresses[3] > 0) {  // forward/select button is pressed
+      showmemenu();
+      idlescreen = false;
+      inputreset();
+    }
+  } else {
+    //gettime();
+    // checktriggers();
+    if (menunumber == menu_setclock) {
+      setclockmenu();
+    } else if (menunumber == menu_triggermenu) {
+      triggermenu();
+    } else {
+      mainmenu();
+    }
   }
 }
 
@@ -151,6 +168,16 @@ void settime() {
     myclock.adjust(DateTime(yearvalue, monthvalue, dayvalue, hourvalue, minutevalue, secondvalue));
     Serial.println("Time Updated");
   }
+}
+
+void settimer() {
+  Serial.print("In Function for setting timer: ");
+  Serial.println(currenttimer);
+  int tominutesmath = hourvalue * 60;
+  tominutesmath = tominutesmath + minutevalue;
+  timers[currenttimer] = tominutesmath;
+  Serial.print("Time written as: ");
+  Serial.println(timers[currenttimer]);
 }
 
 void checkInput() {
@@ -237,40 +264,47 @@ void inputreset() {
 }
 
 void mainmenu() {
-  byte menuoptions = 3;  // the maximum number of menu items written here. Checked for out of bounds entries.
   timenow = millis();
   if (olednow < timenow) {    // if it's time to update the screen.
-    if (numpresses[3] > 0) {  // Set Clock Option - if next is pressed, go to the clock setting menu item.
-      if (menuzerosubnumber == 1) {
+    if (numpresses[3] > 0) {  // forward/select button is pressed
+      if (menuzerosubnumber == 0) {
+        Serial.println("View Clock - not set.");
+      } else if (menuzerosubnumber == 1) {
         menunumber = menu_setclock;
         Serial.println("Going to clock setting menu. Start by setting hours.");
-      } else if (menuzerosubnumber == menuoptions - 1) {
+      } else if (menuzerosubnumber == 3) {
+        Serial.println("Display sleep - not set.");
+      } else if (menuzerosubnumber == menuoptions - 2 && timersset < 11) {
         Serial.print("New timer ");
         Serial.print(timersset + 1);
         Serial.println(" added, set now.");
         timersset++;
+        menuoptions++;
+        Serial.println("Going to timer setting menu. Start by setting hours.");
+        menunumber = menu_setclock;
+        currenttimer = menuzerosubnumber - 1;
+      } else if (menuzerosubnumber == menuoptions - 3 && timersset < 11) {
+        Serial.println("Going to timer menu.");
+        menunumber = menu_triggermenu;
+        currenttimer = menuzerosubnumber - 1;
       }
-    } else if (numpresses[1] > 0) {
-      if (menuzerosubnumber < menuoptions - 1)
+    } else if (numpresses[1] > 0) {  // down button is pressed
+      if (menuzerosubnumber < menuoptions - 1) {
         menuzerosubnumber++;
-      Serial.print("Menu: ");
-      Serial.println(menuzerosubnumber);
-    } else if (numpresses[2] > 0) {
-      if (menuzerosubnumber > 0)
+        showmemenu();
+      }
+    } else if (numpresses[2] > 0) {  // up button is pressed
+      if (menuzerosubnumber > 0) {
         menuzerosubnumber--;
-      Serial.print("Menu: ");
-      Serial.println(menuzerosubnumber);
-    }
-    inputreset();  // all inputs processed, clear old data.
-
-    if (menuzerosubnumber > menuoptions - 1) {  // Safety code. This should already be handled by not letting the values be incremented above
-      menuzerosubnumber = menuoptions - 1;
-      Serial.print("Menu OOB, back to: ");
-      Serial.println(menuzerosubnumber);
-    } else if (menuzerosubnumber < 0) {
+        showmemenu();
+      }
+    } else if (numpresses[0] > 0) {
+      idlescreen == true;
+      inputreset();
       menuzerosubnumber = 0;
-      Serial.print("Menu OOB, back to: 0");
     }
+
+    inputreset();  // all inputs processed, clear old data.
 
     if (oledon == 1) {        // if you are allowing the display to display
       if (menunumber == 0) {  // make sure you didn't select another menu in the above button check. If you are still here, display
@@ -292,7 +326,7 @@ void mainmenu() {
           display.setCursor(5, 10);
           display.print("Set Clock");
           display.display();
-        } else if (menuzerosubnumber == 2) {
+        } else if (menuzerosubnumber == menuoptions - 2) {
           display.clearDisplay();
           display.setCursor(0, 0);
           display.setTextSize(1);
@@ -301,7 +335,7 @@ void mainmenu() {
           display.setCursor(5, 10);
           display.print("New Timer");
           display.display();
-        } else if (menuzerosubnumber == 3) {
+        } else if (menuzerosubnumber == menuoptions - 1) {
           display.clearDisplay();
           display.setCursor(0, 0);
           display.setTextSize(1);
@@ -310,6 +344,16 @@ void mainmenu() {
           display.setCursor(5, 10);
           display.print("Screen Off");
           display.display();
+        } else if (menuzerosubnumber < menuoptions - 2) {  // showing added timers
+          display.clearDisplay();
+          display.setCursor(0, 0);
+          display.setTextSize(1);
+          display.print("Menu:");
+          display.setTextSize(2);
+          display.setCursor(5, 10);
+          display.print("Timer ");
+          display.print(menuzerosubnumber - 1);
+          display.display();
         }
         olednow = timenow + oleddelay;
       }
@@ -317,34 +361,46 @@ void mainmenu() {
   }
 }
 
+
+void showmemenu() {
+
+  if (menunumber == menu_mainmenu) {
+    Serial.print("Menu: ");
+    Serial.print(menuzerosubnumber);
+    if (menuzerosubnumber == 0)
+      Serial.println(" View Clock");
+    else if (menuzerosubnumber == 1)
+      Serial.println(" Set Clock");
+    else if (menuzerosubnumber == menuoptions - 2)
+      Serial.println(" New Timer");
+    else if (menuzerosubnumber == menuoptions - 1)
+      Serial.println(" Turn Off Screen");
+    else if (menuzerosubnumber < menuoptions - 2) {
+      Serial.print(" Configure Timer: ");
+      Serial.println(menuzerosubnumber - 1);
+    }
+  } else if (menunumber == menu_triggermenu) {
+    Serial.print("Triggers: ");
+    Serial.print(menuzerosubnumber);
+    if (menuzerosubnumber == 0)
+      Serial.println(" Idk yet...");
+    else if (menuzerosubnumber == 1)
+      Serial.println(" Idk yet...");
+    else if (menuzerosubnumber == 2)
+      Serial.println(" Idk yet...");
+    else
+      Serial.println("Sloppy code, you are outside your menu bounds.");
+  }
+}
+
 void setclockmenu() {
   timenow = millis();
   if (olednow < timenow) {
-    if (numpresses[3] > 0) {        // if next button is pressed
-      if (menuonesubnumber == 0) {  // If you are currently setting the hours
-        inputreset();
-        menuonesubnumber = 1;  // move forward to the minute setting
-        Serial.println("Now setting Minutes.");
-      } else {  // if you are currently setting the minutes
-        inputreset();
-        settime();
-        Serial.print("You have set the time as: ");
-        Serial.print(hourvalue);
-        Serial.print(":");
-        Serial.println(minutevalue);
-        hourvalue = 0;
-        minutevalue = 0;
-        menunumber = menu_mainmenu;
-        Serial.print("Going back to main menu ");
-        Serial.println(menuzerosubnumber);
-        menuonesubnumber = 0;
-      }
-    }
-
     if (menuonesubnumber == 0) {  // if you are changing the hour
       if (numpresses[0] > 0) {    // if back is pressed, go back to main menu
         menunumber = 0;
         Serial.println("You have pressed back, going back to main menu.");
+        showmemenu();
       } else if (numpresses[2] > 0) {
         hourvalue++;
         Serial.print("Increasing hours to: ");
@@ -353,9 +409,13 @@ void setclockmenu() {
         hourvalue--;
         Serial.print("Decreasing hours to: ");
         Serial.println(hourvalue);
+      } else if (numpresses[3] > 0) {
+        inputreset();
+        menuonesubnumber = 1;  // move forward to the minute setting
+        Serial.println("Now setting Minutes.");
       }
-    } else if (menuonesubnumber == 1) {  // if you are changing the minute
-      if (numpresses[0] > 0) {           // if back is pressed, move back to the hour selection
+    } else {                    // if you are changing the minute
+      if (numpresses[0] > 0) {  // if back is pressed, move back to the hour selection
         menuonesubnumber = 0;
         Serial.println("Going back to set minutes.");
       } else if (numpresses[2] > 0) {
@@ -366,6 +426,28 @@ void setclockmenu() {
         minutevalue--;
         Serial.print("Decreasing minutes to: ");
         Serial.println(minutevalue);
+      } else if (numpresses[3] > 0) {
+        inputreset();
+        if (currenttimer == 0) {
+          settime();
+          Serial.print("You have set the time as: ");
+        } else {
+          settimer();
+          Serial.print("You have set timer ");
+          Serial.print(currenttimer);
+          Serial.print(" as: ");
+          currenttimer = 0;
+        }
+        Serial.print(hourvalue);
+        Serial.print(":");
+        Serial.println(minutevalue);
+        hourvalue = 0;
+        minutevalue = 0;
+        menunumber = menu_mainmenu;
+        Serial.print("Going back to main menu ");
+        Serial.println(menuzerosubnumber);
+        menuonesubnumber = 0;
+        showmemenu();
       }
     }
 
@@ -392,7 +474,12 @@ void setclockmenu() {
         display.clearDisplay();
         display.setCursor(0, 0);
         display.setTextSize(1);
-        display.print("Set Time:");
+        if (currenttimer == 0)
+          display.print("Set Time:");
+        else {
+          display.print("Set Timer: ");
+          display.print(currenttimer);
+        }
         display.setTextSize(2);
         display.setCursor(35, 10);
 
@@ -427,5 +514,39 @@ void setclockmenu() {
     }
 
     olednow = timenow + oleddelay;
+  }
+}
+
+void triggermenu() {
+  //Serial.println("Whomp Whomp, your code is in another castle.");
+  //menunumber = menu_mainmenu;
+  //showmemenu();
+
+  timenow = millis();
+  if (olednow < timenow) {
+    if (numpresses[0] > 0) {  // if back is pressed, go back to main menu
+      menunumber = menu_mainmenu;
+      Serial.println("You have pressed back, going back to main menu.");
+      showmemenu();
+    } else if (numpresses[1] > 0) {  // down button is pressed
+      if (menutwosubnumber < 2) {
+        menuzerosubnumber++;
+        showmemenu();
+      }
+    } else if (numpresses[2] > 0) {  // up button is pressed
+      if (menuzerosubnumber > 0) {
+        menuzerosubnumber--;
+        showmemenu();
+      }
+    } else if (numpresses[3] > 0) {  // if select/next button is pressed
+      if (menutwosubnumber == 0) {
+        Serial.println("Idk, something about your selection. Whatever you selected is good.");
+      } else if (menutwosubnumber == 1) {
+        Serial.println("Idk, something about your selection. Whatever you selected is good.");
+      } else if (menutwosubnumber == 2) {
+        Serial.println("Idk, something about your selection. Whatever you selected is good.");
+      }
+    }
+    inputreset();
   }
 }
